@@ -29,7 +29,7 @@
 - SQL を文字列で組み立てない。SQLAlchemy の `select()` を使う
 - SQLite でしか動かない書き方（SQLite 専用の SQL や関数。`strftime`、`PRAGMA` など）を使わない。本番の MySQL でも動く SQLAlchemy の書き方にする（文字列のカラムは `String(50)` のように長さを付ける）
 - アップロードされた写真は、拡張子と中身（JPEG/PNG/WebP）とサイズ（5MB 以下）を確かめ、ファイル名はサーバーで付け直す
-- （AI 機能を足した場合）Claude API は `marche/services/ai.py` の関数からだけ呼ぶ。モデルは環境変数 `ANTHROPIC_MODEL`（既定 `claude-haiku-4-5`）。失敗は `AIError` にして画面に短く出す。テストでは必ずフェイクに差し替え、本物の API を呼ばない
+- （AI 機能を足した場合）Claude API は `marche/services/ai.py` の関数からだけ呼ぶ。モデルは環境変数 `ANTHROPIC_MODEL`（既定 `claude-haiku-5-5`）。失敗は `AIError` にして画面に短く出す。テストでは必ずフェイクに差し替え、本物の API を呼ばない
 - テーブルを変えたら `uv run flask db migrate -m "..."` → `uv run flask db upgrade`。マイグレーションのファイルは読んでから適用する
 - 機能を追加したら `tests/` に pytest のテストを追加し（正常系・権限なし・不正な入力）、`/check` が通ることを確認する
 
