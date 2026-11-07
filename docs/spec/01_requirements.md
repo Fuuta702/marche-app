@@ -162,8 +162,8 @@ AI の機能は、**拡張モジュール（任意）で作ります**（コア�
 - 写真は JPEG / PNG / WebP、5MB まで。拡張子だけでなく、ファイルの中身（先頭のバイト）でも確認する
 - フォームは全て CSRF トークン付き（Flask-WTF）。Stripe の Webhook だけは CSRF の対象外にし、署名で確かめる
 - 本番は HTTPS（Let's Encrypt）
-- データベースは、開発とテストは SQLite、本番は MySQL 8.0（さくらVPS。文字コードは utf8mb4）。SQLAlchemy を通して使い、SQLite でしか動かない書き方（SQLite 専用の SQL や関数）をしない
-- 本番のデータ（データベースと商品写真）は毎日バックアップし、VPS の外（さくらのオブジェクトストレージ）にも保存する
+- データベースは、開発とテストは SQLite、本番は MySQL 8.0（Google Cloud の VM。文字コードは utf8mb4）。SQLAlchemy を通して使い、SQLite でしか動かない書き方（SQLite 専用の SQL や関数）をしない
+- 本番のデータ（データベースと商品写真）は毎日バックアップし、VPS の外（Cloud Storageジェクトストレージ）にも保存する
 
 <br>
 
