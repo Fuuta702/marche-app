@@ -50,6 +50,22 @@
 ## 設計（Day4 以降に追記していく）
 
 - 仕様: `docs/spec/`
-- 画面一覧: `docs/design/screens.md`
-- データベース設計: `docs/design/database.md`
-- 用語: {{ 生産者、購入者、商品、カート、注文、注文明細 などの定義 }}
+- 画面一覧（URL、ログイン、ロール）: [docs/design/screens.md](docs/design/screens.md)
+- データベース設計（ER 図、カラム定義、削除時の動き）: [docs/design/database.md](docs/design/database.md)
+
+### 用語
+
+- 生産者（producer）: 商品を出品するユーザー。`products.producer_id` で商品と結ぶ
+- 購入者（customer）: 商品を買うユーザー。注文者は `orders.user_id`。出品者と注文者は列の名前を変えて区別する
+- 商品（products）: 名前、紹介文、価格（円・整数）、在庫、公開中か、写真1枚（なくてもよい）。新規は非公開
+- カート: セッションに持つ。テーブルにしない
+- 注文（orders）: 状態は `pending`（支払い待ち）→ `paid`（支払い済み）/ `cancelled`（取り消し）。Stripe の Session ID は `stripe_session_id`（重複不可）
+- 注文明細（order_items）: 注文時点の商品名と単価を保存する。あとで商品が変わっても注文は変わらない
+
+### 設計の要点
+
+- 外部キーの削除: 注文のある商品は消せず、非公開にする（RESTRICT）。注文を消すと明細も消える（CASCADE）。SQLite は外部キーを守らないので、アプリでも確かめる
+- 値を変える操作は全て POST。URL の `/producer/` は生産者、`/orders/` はログインユーザーの画面
+- Stripe を呼ぶコードは `marche/services/payment.py` だけに書く（AI 機能を足すなら、Claude API は `marche/services/ai.py` だけ）
+- テストでは本物の API を呼ばない。`create_app()` の設定でフェイクに差し替える
+- （AI 機能を足した場合）AI の出力はそのまま保存・公開しない。人が確認してから保存する
