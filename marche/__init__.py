@@ -43,7 +43,10 @@ def create_app(config=None):
     commands.init_app(app)
 
     @app.template_filter("yen")
-    def yen(value: int) -> str:
+    def yen(value: int | None) -> str:
+        # 1200 → 「1,200円」。値が無いとき（None）は、エラーにせず何も出さない
+        if value is None:
+            return ""
         return f"{value:,}円"
 
     @app.errorhandler(403)

@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 import pytest
 
-from marche.models import OrderStatus
+from marche.extensions import db
+from marche.models import Order, OrderItem, OrderStatus, now_jst
 from marche.services.inventory import (
     PENDING_MINUTES,
     available_stock,
@@ -70,3 +73,40 @@ def test_押さえた数が在庫を超えても0未満にならない(
     make_order(admin, [(product, 4)])
     assert reserved_quantity(product) == 8
     assert available_stock(product) == 0
+
+
+def create_order(user, product, quantity, status=OrderStatus.PENDING, minutes_ago=0):
+    """注文と明細を直接作る。商品名と単価は注文時点の値を明細に入れる"""
+    order = Order(
+        user_id=user.id,
+        status=status,
+        total_amount=product.price * quantity,
+        created_at=now_jst() - timedelta(minutes=minutes_ago),
+    )
+    order.items.append(
+        OrderItem(
+            product_id=product.id,
+            product_name=product.name,
+            unit_price=product.price,
+            quantity=quantity,
+        )
+    )
+    db.session.add(order)
+    db.session.commit()
+    return order
+
+
+def test_支払い待ちの注文があると買える数が減る(customer, apple):
+    create_order(customer, apple, 4)
+    assert available_stock(apple) == 6
+
+
+def test_支払い待ちが期限を過ぎると買える数に影響しない(customer, apple):
+    # 境目ちょうどは時計で揺れるので、1 分過ぎたもので確かめる
+    create_order(customer, apple, 4, minutes_ago=PENDING_MINUTES + 1)
+    assert available_stock(apple) == 10
+
+
+def test_取り消した注文は買える数に影響しない(customer, apple):
+    create_order(customer, apple, 4, status=OrderStatus.CANCELLED)
+    assert available_stock(apple) == 10

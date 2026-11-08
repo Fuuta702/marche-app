@@ -120,6 +120,6 @@ erDiagram
 ## 注意点
 
 - SQLite は、外部キーの制約を標準では守らない（MySQL は守る）。`PRAGMA` は SQLite 専用なので使わず、アプリ側でも削除前に「注文のある商品か」を確かめて弾く。RESTRICT はテストで確かめる
-- 在庫は、支払い確定（Webhook）で `stock` を減らす。「いま買える数」は `marche/services/inventory.py` の `available_stock()` で、`stock` から「支払い待ちで、作成から `PENDING_MINUTES`（35 分）以内の注文」の数量の合計を引いて求める（0 未満にはしない）。35 分を過ぎた支払い待ちは、Checkout Session の期限（最短 30 分）が切れているので押さえない
+- 在庫は、支払い確定（Webhook）で `stock` を減らす。「いま買える数」は `marche/services/inventory.py` の `available_stock()` で、`stock` から「支払い待ちで、作成から `PENDING_MINUTES`（35 分）以内の注文」の数量の合計を引いて求める（0 未満にはしない）。支払い待ちも 35 分間は在庫を押さえる。35 分を過ぎた支払い待ちは、決済ページの期限（31 分）が切れているので押さえない
 - 注文のある商品は、注文の状態にかかわらず削除できない（`producer.delete` で確かめ、「非公開にしてください」と出す）
 - CHECK 制約は MySQL 8.0.16 以上で効く。本番の 8.0 で問題ない
