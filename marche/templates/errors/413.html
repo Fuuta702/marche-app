@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ファイルが大きすぎます</h1>
+<p>写真は 5MB までです。小さくしてから、もう一度選んでください。</p>
+<p><a href="{{ url_for('shop.index') }}">トップへ戻る</a></p>
+{% endblock %}

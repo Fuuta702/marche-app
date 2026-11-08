@@ -5,6 +5,7 @@ from marche.decorators import role_required
 from marche.extensions import db
 from marche.forms import ProductForm
 from marche.models import Product, Role
+from marche.uploads import delete_image, detect_media_type, save_image
 
 bp = Blueprint("producer", __name__, url_prefix="/producer")
 
@@ -26,6 +27,23 @@ def fill_product(product: Product, form: ProductForm) -> None:
     product.is_published = form.is_published.data
 
 
+def read_photo(form: ProductForm):
+    """選ばれた写真の中身を確かめる。
+    選ばれていなければ None、画像なら (データ, 種類)、画像でなければフォームにエラーを足して False
+    """
+    file = form.photo.data
+    if not file or not file.filename:
+        return None
+    data = file.read()
+    media_type = detect_media_type(data)
+    if media_type is None:
+        form.photo.errors.append(
+            "画像ではないファイルです。JPEG / PNG / WebP の画像を選んでください"
+        )
+        return False
+    return data, media_type
+
+
 @bp.route("/products")
 @role_required(Role.PRODUCER)
 def index():
@@ -41,9 +59,11 @@ def index():
 @role_required(Role.PRODUCER)
 def new():
     form = ProductForm()
-    if form.validate_on_submit():
+    if form.validate_on_submit() and (photo := read_photo(form)) is not False:
         product = Product(producer_id=current_user.id)
         fill_product(product, form)
+        if photo:
+            product.image_filename = save_image(*photo)
         db.session.add(product)
         db.session.commit()
         flash("商品を登録しました")
@@ -57,9 +77,15 @@ def new():
 def edit(product_id: int):
     product = get_own_product_or_403(product_id)
     form = ProductForm(obj=product)
-    if form.validate_on_submit():
+    if form.validate_on_submit() and (photo := read_photo(form)) is not False:
         fill_product(product, form)
+        old_filename = product.image_filename
+        if photo:
+            product.image_filename = save_image(*photo)
         db.session.commit()
+        # 古い写真は、新しい写真を DB に書いてから消す（途中で失敗しても、無いファイルを指さないように）
+        if photo:
+            delete_image(old_filename)
         flash("商品を更新しました")
         return redirect(url_for("producer.index"))
     status = 422 if form.is_submitted() else 200
@@ -82,8 +108,9 @@ def toggle(product_id: int):
 def delete(product_id: int):
     # 注文のある商品を削除できないようにする制限は、注文の章で足す
     product = get_own_product_or_403(product_id)
-    name = product.name
+    name, filename = product.name, product.image_filename
     db.session.delete(product)
     db.session.commit()
+    delete_image(filename)
     flash(f"「{name}」を削除しました")
     return redirect(url_for("producer.index"))
