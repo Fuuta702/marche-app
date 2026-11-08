@@ -3,7 +3,7 @@ from datetime import timedelta
 from sqlalchemy import func, select
 
 from marche.extensions import db
-from marche.models import Order, OrderItem, OrderStatus, Product, now_jst
+from marche.models import Order, OrderItem, OrderStatus, Product, User, now_jst
 
 # 在庫の設計:
 # - 支払い待ち（pending）の注文も、作成から PENDING_MINUTES 分間は在庫を押さえる。
@@ -34,3 +34,81 @@ def reserved_quantity(product: Product) -> int:
 def available_stock(product: Product) -> int:
     """いま買える数。支払い済みの分は product.stock から既に引かれている。0 未満にはしない"""
     return max(product.stock - reserved_quantity(product), 0)
+
+
+MAX_QUANTITY = 10  # 1商品あたり1回に買える数
+
+
+class OrderError(Exception):
+    """注文を作れないときの例外。message は画面にそのまま出せる日本語"""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _normalize_cart(cart: dict) -> dict[int, int]:
+    """{商品ID: 数量} を {int: int} に直す。セッション（JSON）から来るとキーは文字列"""
+    items: dict[int, int] = {}
+    for key, quantity in cart.items():
+        try:
+            product_id = int(key)
+        except TypeError, ValueError:
+            raise OrderError("カートに不正な商品があります") from None
+        # True / False も int の仲間なので、はっきり弾く
+        if isinstance(quantity, bool) or not isinstance(quantity, int):
+            raise OrderError("カートの数量が正しくありません")
+        items[product_id] = items.get(product_id, 0) + quantity
+    return items
+
+
+def create_order(user: User, cart: dict) -> Order:
+    """カートから支払い待ちの注文を作る。
+
+    先に全ての商品を確かめ、1つでも駄目なら OrderError（DB には何も足さない）。
+    金額は引数で受け取らず、全て DB の product.price から計算する。
+    """
+    items = _normalize_cart(cart or {})
+    if not items:
+        raise OrderError("カートが空です")
+
+    products = {
+        product.id: product
+        for product in db.session.scalars(
+            select(Product).where(Product.id.in_(items.keys()))
+        )
+    }
+
+    # ---- 確認（ここでは DB に何も足さない） ----
+    for product_id, quantity in items.items():
+        product = products.get(product_id)
+        # 存在しない商品と非公開の商品は、同じメッセージにする（非公開の商品が「ある」ことを教えない）
+        if product is None or not product.is_published:
+            raise OrderError("販売していない商品がカートに入っています")
+        if not 1 <= quantity <= MAX_QUANTITY:
+            raise OrderError(
+                f"「{product.name}」の数量は 1〜{MAX_QUANTITY} にしてください"
+            )
+        stock = available_stock(product)
+        if quantity > stock:
+            raise OrderError(
+                f"「{product.name}」は在庫が足りません（いま買える数: {stock}）"
+            )
+
+    # ---- 作成（確認が全部通ったときだけ。commit は1回） ----
+    order = Order(user_id=user.id, status=OrderStatus.PENDING, total_amount=0)
+    for product_id, quantity in items.items():
+        product = products[product_id]
+        # 注文時点の商品名と単価（DB の価格）を明細に残す。小計は OrderItem.subtotal
+        order.items.append(
+            OrderItem(
+                product_id=product.id,
+                product_name=product.name,
+                unit_price=product.price,
+                quantity=quantity,
+            )
+        )
+    order.total_amount = sum(item.subtotal for item in order.items)
+    db.session.add(order)
+    db.session.commit()
+    return order
