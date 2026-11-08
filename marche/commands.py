@@ -84,15 +84,19 @@ SEED_PRODUCTS = [
 
 
 def run_seed() -> None:
-    # 写真のファイルは DB を消すと指す行が無くなるので、先に消す
-    for filename in db.session.scalars(
-        db.select(Product.image_filename).where(Product.image_filename.is_not(None))
-    ):
-        delete_image(filename)
+    # 写真のファイル名は、DB を消す前に集めておく（消したあとでは分からない）
+    filenames = list(
+        db.session.scalars(
+            db.select(Product.image_filename).where(Product.image_filename.is_not(None))
+        )
+    )
     # 外部キーの順に消す（明細 → 注文 → 商品 → ユーザー）
     for model in (OrderItem, Order, Product, User):
         db.session.execute(delete(model))
     db.session.commit()
+    # ファイルの削除は取り消せないので、DB の削除が確定してから行う
+    for filename in filenames:
+        delete_image(filename)
     # まとめて消してもセッションは前のオブジェクトを覚えている。同じ ID と混ざらないように忘れさせる
     db.session.expunge_all()
 
@@ -137,11 +141,18 @@ def init_app(app):
         click.echo(f"管理者 {email} を作りました")
 
     @app.cli.command("seed")
-    @click.confirmation_option(
-        prompt="全データ（ユーザー、商品、注文）を消して入れ直します。よいですか？（本番では実行しない）"
-    )
-    def seed():
-        """開発用の初期データを入れる。既存のデータは全て消す"""
+    @click.option("--yes", is_flag=True, help="確認を出さずに実行する")
+    def seed(yes):
+        """開発用の初期データを入れる。既存のデータは全て消す（開発とテストでだけ動く）"""
+        # 本番で打ち間違えても売上の記録と写真が消えないよう、--yes より先に止める
+        if not (app.debug or app.testing):
+            raise click.ClickException(
+                "seed は開発環境（FLASK_DEBUG=1）でだけ実行できます"
+            )
+        if not yes and not click.confirm(
+            "全データ（ユーザー、商品、注文）を消して入れ直します。よいですか？"
+        ):
+            raise click.Abort()
         run_seed()
         click.echo(
             f"ユーザー {len(SEED_USERS)} 人、商品 {len(SEED_PRODUCTS)} 件を入れました"

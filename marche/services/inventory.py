@@ -9,6 +9,7 @@ from marche.models import Order, OrderItem, OrderStatus, Product, now_jst
 # - 支払い待ち（pending）の注文も、作成から PENDING_MINUTES 分間は在庫を押さえる。
 #   決済ページで支払っている間に、同じ在庫を他の人に売らないため
 # - 35 分を過ぎた支払い待ちは押さえない。決済ページの期限（31 分）が切れていて、もう支払われないため
+#   （31 分は、決済の章で services/payment.py の Checkout Session の expires_at に設定する予定）
 # - 支払い済み（paid）は、確定したときに product.stock から引くので、ここでは数えない
 # - キャンセル（cancelled）は押さえない
 PENDING_MINUTES = 35  # 決済ページの期限（31 分）より少し長くする

@@ -1,7 +1,11 @@
+import os
+
 import pytest
 
+from marche import create_app
 from marche.extensions import db
-from marche.models import Product, Role, User
+from marche.models import Order, OrderItem, Product, Role, User
+from marche.uploads import save_image
 
 # ---- 一覧 ----
 
@@ -149,3 +153,56 @@ def test_seedのユーザーでログインできる(app, client):
         "/login", data={"email": "producer1@example.com", "password": "password"}
     )
     assert response.headers["Location"] == "/producer/products"
+
+
+def test_seedは注文があっても消して入れ直す(
+    app, customer, producer, make_product, make_order
+):
+    product = make_product(producer)
+    make_order(customer, [(product, 2)])
+    result = run_seed(app, "--yes")
+    assert result.exit_code == 0
+    assert db.session.scalars(db.select(Order)).all() == []
+    assert db.session.scalars(db.select(OrderItem)).all() == []
+    assert len(db.session.scalars(db.select(Product)).all()) == 8
+
+
+def test_seedは商品の写真のファイルも消す(app, producer, make_product):
+    filename = save_image(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20, "image/png")
+    make_product(producer, image_filename=filename)
+    path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    assert os.path.exists(path)
+    run_seed(app, "--yes")
+    assert not os.path.exists(path)
+
+
+def test_seedは開発環境でなければ動かない(monkeypatch, tmp_path):
+    # 本番と同じく debug も testing も無い app を作る
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    prod_app = create_app(
+        {
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "SECRET_KEY": "test-secret",
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+        }
+    )
+    with prod_app.app_context():
+        db.create_all()
+        user = User(name="本番の人", email="real@example.com", role=Role.CUSTOMER)
+        user.set_password("password")
+        db.session.add(user)
+        db.session.commit()
+        result = prod_app.test_cli_runner().invoke(args=["seed", "--yes"])
+        assert result.exit_code != 0
+        assert "開発環境" in result.output
+        assert [u.email for u in db.session.scalars(db.select(User))] == [
+            "real@example.com"
+        ]
+        db.session.remove()
+
+
+def test_一覧は新しい順に並ぶ(client, producer, make_product):
+    make_product(producer, name="先に登録した商品")
+    make_product(producer, name="後に登録した商品")
+    text = client.get("/").text
+    assert text.index("後に登録した商品") < text.index("先に登録した商品")
