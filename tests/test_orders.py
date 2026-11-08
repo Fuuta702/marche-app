@@ -209,3 +209,66 @@ def test_1つでも駄目なら他の商品の注文も作らない(customer, pr
     with pytest.raises(OrderError):
         create_order(customer, {ok.id: 1, ng.id: 1})
     assert order_count() == (0, 0)
+
+
+# ---- カートと注文の画面 ----
+
+
+def test_画面から注文すると合計はDBの価格で計算される(
+    client, customer, login, producer, make_product
+):
+    apple = make_product(producer, name="りんご", price=300, stock=10)
+    miso = make_product(producer, name="味噌", price=1300, stock=10)
+    login(customer)
+    client.post(f"/cart/add/{apple.id}", data={"quantity": 2})
+    client.post(f"/cart/add/{miso.id}", data={"quantity": 1})
+
+    # フォームに金額を混ぜても無視される
+    response = client.post(
+        "/orders/", data={"total_amount": 1, "price": 1, "unit_price": 1}
+    )
+
+    order = db.session.scalar(db.select(Order))
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/orders/{order.id}")
+    assert order.user_id == customer.id
+    assert order.total_amount == 300 * 2 + 1300
+    assert {i.unit_price for i in order.items} == {300, 1300}
+    # 注文できたらカートは空になる
+    with client.session_transaction() as session:
+        assert not session.get("cart")
+
+
+def test_未ログインで注文するとログイン画面へ移り注文は作られない(
+    client, producer, make_product
+):
+    apple = make_product(producer, price=300)
+    client.post(f"/cart/add/{apple.id}", data={"quantity": 1})
+
+    response = client.post("/orders/")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith("/login")
+    assert order_count() == (0, 0)
+
+
+def test_他人の注文詳細は見られない(
+    client, customer, other_producer, login, apple, make_order
+):
+    order = make_order(customer, [(apple, 1)])
+    login(other_producer)
+    assert client.get(f"/orders/{order.id}").status_code == 403
+
+
+def test_未ログインのカートにはログインして注文するリンクが出る(
+    client, producer, make_product
+):
+    apple = make_product(producer)
+    client.post(f"/cart/add/{apple.id}", data={"quantity": 1})
+
+    response = client.get("/cart/")
+
+    assert response.status_code == 200
+    assert 'href="/login?next=/cart/"' in response.text
+    assert "ログインして注文する" in response.text
+    assert "注文して支払いへ進む" not in response.text
