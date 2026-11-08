@@ -59,7 +59,7 @@
 - 購入者（customer）: 商品を買うユーザー。注文者は `orders.user_id`。出品者と注文者は列の名前を変えて区別する
 - 商品（products）: 名前、紹介文、価格（円・整数）、在庫、公開中か、写真1枚（なくてもよい）。新規は非公開
 - カート: セッションに持つ。テーブルにしない
-- 注文（orders）: 状態は `pending`（支払い待ち）→ `paid`（支払い済み）/ `cancelled`（取り消し）。Stripe の Session ID は `stripe_session_id`（重複不可）
+- 注文（orders）: 状態は `pending`（支払い待ち）→ `paid`（支払い済み）/ `cancelled`（キャンセル）。Stripe の Session ID は `stripe_checkout_session_id`（重複不可）。在庫は `services/inventory.py` の `available_stock()` で求める
 - 注文明細（order_items）: 注文時点の商品名と単価を保存する。あとで商品が変わっても注文は変わらない
 
 ### 設計の要点

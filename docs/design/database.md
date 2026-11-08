@@ -36,7 +36,7 @@ erDiagram
         int user_id FK
         string status
         int total_amount
-        string stripe_session_id UK
+        string stripe_checkout_session_id UK
         datetime created_at
         datetime paid_at
     }
@@ -86,13 +86,13 @@ erDiagram
 |-|-|-|-|
 | id | Integer | PK | |
 | user_id | Integer | FK → users.id, NOT NULL, INDEX | 注文した人 |
-| status | String(20) | NOT NULL, 既定 `pending`, INDEX | `pending`（支払い待ち）→ `paid`（支払い済み）または `cancelled`（取り消し） |
+| status | String(20) | NOT NULL, 既定 `pending`, INDEX | `pending`（支払い待ち）→ `paid`（支払い済み）または `cancelled`（キャンセル）。`OrderStatus` で持つ |
 | total_amount | Integer | NOT NULL, CHECK 0 以上 | 合計金額。注文時にサーバーが明細から計算して保存 |
-| stripe_session_id | String(255) | UNIQUE, NULL 可 | Checkout Session の ID。作成前は NULL |
+| stripe_checkout_session_id | String(255) | UNIQUE, NULL 可 | Checkout Session の ID。作成前は NULL |
 | created_at | DateTime | NOT NULL | 注文日時 |
 | paid_at | DateTime | NULL 可 | 支払い確定の日時 |
 
-`stripe_session_id` は、注文を作った時点ではまだ ID がないので NULL を許す。UNIQUE は NULL を複数持てるので、SQLite でも MySQL でも問題ない。
+`stripe_checkout_session_id` は、注文を作った時点ではまだ ID がないので NULL を許す。UNIQUE は NULL を複数持てるので、SQLite でも MySQL でも問題ない。
 
 ### order_items（注文明細）
 
@@ -120,5 +120,6 @@ erDiagram
 ## 注意点
 
 - SQLite は、外部キーの制約を標準では守らない（MySQL は守る）。`PRAGMA` は SQLite 専用なので使わず、アプリ側でも削除前に「注文のある商品か」を確かめて弾く。RESTRICT はテストで確かめる
-- 在庫は、支払い確定（Webhook）で減らす。「いま買える数」は、在庫から支払い待ちの注文の数量を引いて求める
+- 在庫は、支払い確定（Webhook）で `stock` を減らす。「いま買える数」は `marche/services/inventory.py` の `available_stock()` で、`stock` から「支払い待ちで、作成から `PENDING_MINUTES`（35 分）以内の注文」の数量の合計を引いて求める（0 未満にはしない）。35 分を過ぎた支払い待ちは、Checkout Session の期限（最短 30 分）が切れているので押さえない
+- 注文のある商品は、注文の状態にかかわらず削除できない（`producer.delete` で確かめ、「非公開にしてください」と出す）
 - CHECK 制約は MySQL 8.0.16 以上で効く。本番の 8.0 で問題ない

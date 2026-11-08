@@ -1,8 +1,18 @@
+from datetime import timedelta
+
 import pytest
 
 from marche import create_app
 from marche.extensions import db
-from marche.models import Product, Role, User
+from marche.models import (
+    Order,
+    OrderItem,
+    OrderStatus,
+    Product,
+    Role,
+    User,
+    now_jst,
+)
 
 # 本物の外部サービス（Stripe、拡張で足す Claude API）は、テストでは呼ばない。
 # 決済の章（と AI の拡張）で、ここにフェイク（偽物）のクラスを足し、create_app() の設定で差し替える。
@@ -67,6 +77,34 @@ def make_product(app):
         db.session.add(product)
         db.session.commit()
         return product
+
+    return do_make
+
+
+@pytest.fixture
+def make_order(app):
+    """make_order(user, [(product, 数量), ...], status=..., minutes_ago=...)"""
+
+    def do_make(user, items, status=OrderStatus.PENDING, minutes_ago=0, **fields):
+        order = Order(
+            user_id=user.id,
+            status=status,
+            total_amount=sum(product.price * quantity for product, quantity in items),
+            created_at=now_jst() - timedelta(minutes=minutes_ago),
+            **fields,
+        )
+        for product, quantity in items:
+            order.items.append(
+                OrderItem(
+                    product_id=product.id,
+                    product_name=product.name,
+                    unit_price=product.price,
+                    quantity=quantity,
+                )
+            )
+        db.session.add(order)
+        db.session.commit()
+        return order
 
     return do_make
 
