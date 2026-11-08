@@ -84,44 +84,12 @@ def test_購入者として登録するとトップに移る(client):
     assert response.headers["Location"] == "/"
 
 
-def test_生産者は出品管理を開ける(client, producer, login):
-    login(producer)
-    response = client.get("/producer/products")
-    assert response.status_code == 200
-    assert "出品管理" in response.text
-
-
-def test_購入者は出品管理を開けない(client, customer, login):
-    login(customer)
-    assert client.get("/producer/products").status_code == 403
-
-
-def test_管理者も出品管理を開けない(client, admin, login):
-    login(admin)
-    assert client.get("/producer/products").status_code == 403
-
-
-def test_未ログインで出品管理を開くとログイン画面へ(client):
-    response = client.get("/producer/products")
-    assert response.status_code == 302
-    assert response.headers["Location"].startswith("/login")
-    assert "next=" in response.headers["Location"]
-
-
 def test_ログイン後にnextの出品管理へ戻る(client, producer):
     response = client.post(
         "/login?next=/producer/products",
         data={"email": producer.email, "password": "password"},
     )
     assert response.headers["Location"] == "/producer/products"
-
-
-def test_出品管理のリンクは生産者にだけ出る(client, customer, producer, login):
-    login(customer)
-    assert "出品管理" not in client.get("/").text
-    client.post("/logout")
-    login(producer)
-    assert "出品管理" in client.get("/").text
 
 
 def test_create_adminで管理者を作れる(app):

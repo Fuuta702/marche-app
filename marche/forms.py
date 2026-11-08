@@ -1,6 +1,21 @@
 from flask_wtf import FlaskForm
-from wtforms import EmailField, PasswordField, RadioField, StringField
-from wtforms.validators import DataRequired, Length, Regexp
+from wtforms import (
+    BooleanField,
+    EmailField,
+    IntegerField,
+    PasswordField,
+    RadioField,
+    StringField,
+    TextAreaField,
+)
+from wtforms.validators import (
+    DataRequired,
+    InputRequired,
+    Length,
+    NumberRange,
+    Optional,
+    Regexp,
+)
 
 from marche.models import Role
 
@@ -27,3 +42,25 @@ class RegisterForm(FlaskForm):
 class LoginForm(FlaskForm):
     email = EmailField("メールアドレス", validators=[DataRequired(), EMAIL])
     password = PasswordField("パスワード", validators=[DataRequired()])
+
+
+class ProductForm(FlaskForm):
+    # producer_id は持たない。出品者はログイン中のユーザーにする（フォームから受け取らない）
+    name = StringField("商品名", validators=[DataRequired(), Length(max=50)])
+    # 0 も入力として受け付けるため、DataRequired ではなく InputRequired を使う
+    price = IntegerField(
+        "価格（円・税込み）",
+        validators=[
+            InputRequired(),
+            NumberRange(min=50, max=100000, message="50〜100,000円で入力してください"),
+        ],
+    )
+    stock = IntegerField(
+        "在庫数",
+        validators=[
+            InputRequired(),
+            NumberRange(min=0, max=999, message="0〜999で入力してください"),
+        ],
+    )
+    description = TextAreaField("紹介文", validators=[Optional(), Length(max=2000)])
+    is_published = BooleanField("公開する")
