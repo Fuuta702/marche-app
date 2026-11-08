@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 
 from flask import Flask, render_template
 
@@ -33,9 +34,9 @@ def create_app(config=None):
     login_manager.login_view = "auth.login"
     login_manager.login_message = "ログインしてください"
 
-    from marche.views import auth, producer, shop
+    from marche.views import auth, cart, orders, producer, shop
 
-    for module in (auth, shop, producer):
+    for module in (auth, shop, producer, cart, orders):
         app.register_blueprint(module.bp)
 
     from marche import commands
@@ -48,6 +49,14 @@ def create_app(config=None):
         if value is None:
             return ""
         return f"{value:,}円"
+
+    @app.template_filter("datetime_ja")
+    def datetime_ja(value: datetime | None) -> str:
+        # 「11月14日(土) 10:00」の形。保存している時刻は日本時間
+        if value is None:
+            return ""
+        weekday = "月火水木金土日"[value.weekday()]
+        return f"{value.month}月{value.day}日({weekday}) {value:%H:%M}"
 
     @app.errorhandler(403)
     def forbidden(error):

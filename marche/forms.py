@@ -45,6 +45,13 @@ class LoginForm(FlaskForm):
     password = PasswordField("パスワード", validators=[DataRequired()])
 
 
+class CartQuantityForm(FlaskForm):
+    # 数量だけを受け取る（金額は受け取らない）。上限は在庫で変わるのでビューで確かめる
+    quantity = IntegerField(
+        "数量", validators=[InputRequired(message="数量を入力してください")]
+    )
+
+
 class ProductForm(FlaskForm):
     # producer_id は持たない。出品者はログイン中のユーザーにする（フォームから受け取らない）
     name = StringField("商品名", validators=[DataRequired(), Length(max=50)])
