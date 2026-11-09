@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from marche.extensions import db
 from marche.models import Order, OrderItem, OrderStatus, Product, User, now_jst
@@ -131,3 +131,21 @@ def create_order(user: User, cart: dict) -> Order:
         db.session.rollback()
         raise
     return order
+
+
+def cancel(order: Order) -> bool:
+    """支払い待ちの注文だけを取り消す。取り消せたら True、既に支払い済みか取り消し済みなら False
+
+    「読んで pending なら書く」と2段階にすると、支払いの確定と同時に来たときに食い違うので、
+    WHERE status = 'pending' の条件付きの UPDATE 1文で行う（仕様書 4 の「条件付き更新」）。
+    取り消すと、reserved_quantity が pending しか数えないので、押さえていた在庫が戻る
+    """
+    result = db.session.execute(
+        update(Order)
+        .where(Order.id == order.id, Order.status == OrderStatus.PENDING)
+        .values(status=OrderStatus.CANCELLED)
+        .execution_options(synchronize_session=False)
+    )
+    db.session.commit()
+    db.session.refresh(order)
+    return result.rowcount == 1
