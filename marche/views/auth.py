@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
@@ -21,10 +23,14 @@ def home_url(user: User) -> str:
 
 
 def safe_next(target: str | None) -> str | None:
-    # 外部サイトへ飛ばされないように、"/" で始まる自サイトのパスだけを許す
-    if target and target.startswith("/") and not target.startswith("//"):
-        return target
-    return None
+    # 外部サイトへ飛ばされないように、"/" で始まる自サイトのパスだけを許す。
+    # ブラウザは "\" を "/" として扱うので、"/\evil.example" も外部サイトになる。"\" を含むものは拒否する
+    if not target or not target.startswith("/") or "\\" in target:
+        return None
+    parts = urlsplit(target)
+    if parts.scheme or parts.netloc:  # "//evil.example" など
+        return None
+    return target
 
 
 @bp.route("/register", methods=["GET", "POST"])

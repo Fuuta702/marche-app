@@ -114,3 +114,31 @@ def test_本番でSECRET_KEYが無いと起動しない(monkeypatch):
     monkeypatch.delenv("FLASK_DEBUG", raising=False)
     with pytest.raises(RuntimeError):
         create_app({"SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example.com/",
+        "//evil.example.com/",
+        "/\\evil.example.com/",
+        "/\\/evil.example.com/",
+        "javascript:alert(1)",
+    ],
+)
+def test_ログイン後のnextに外部へ飛ぶ値は使えない(client, customer, next_url):
+    response = client.post(
+        "/login",
+        query_string={"next": next_url},
+        data={"email": customer.email, "password": "password"},
+    )
+    assert response.headers["Location"] == "/"
+
+
+def test_ログイン後のnextにクエリ付きの自サイトのパスは使える(client, customer):
+    response = client.post(
+        "/login",
+        query_string={"next": "/cart/?from=login"},
+        data={"email": customer.email, "password": "password"},
+    )
+    assert response.headers["Location"] == "/cart/?from=login"

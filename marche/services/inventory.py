@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from marche.extensions import db
 from marche.models import Order, OrderItem, OrderStatus, Product, User, now_jst
@@ -62,24 +62,8 @@ def _normalize_cart(cart: dict) -> dict[int, int]:
     return items
 
 
-def create_order(user: User, cart: dict) -> Order:
-    """カートから支払い待ちの注文を作る。
-
-    先に全ての商品を確かめ、1つでも駄目なら OrderError（DB には何も足さない）。
-    金額は引数で受け取らず、全て DB の product.price から計算する。
-    """
-    items = _normalize_cart(cart or {})
-    if not items:
-        raise OrderError("カートが空です")
-
-    products = {
-        product.id: product
-        for product in db.session.scalars(
-            select(Product).where(Product.id.in_(items.keys()))
-        )
-    }
-
-    # ---- 確認（ここでは DB に何も足さない） ----
+def _check_items(items: dict[int, int], products: dict[int, Product]) -> None:
+    """全ての商品を確かめる。1つでも駄目なら OrderError"""
     for product_id, quantity in items.items():
         product = products.get(product_id)
         # 存在しない商品と非公開の商品は、同じメッセージにする（非公開の商品が「ある」ことを教えない）
@@ -94,6 +78,37 @@ def create_order(user: User, cart: dict) -> Order:
             raise OrderError(
                 f"「{product.name}」は在庫が足りません（いま買える数: {stock}）"
             )
+
+
+def create_order(user: User, cart: dict) -> Order:
+    """カートから支払い待ちの注文を作る。
+
+    先に全ての商品を確かめ、1つでも駄目なら OrderError（DB には何も足さない）。
+    金額は引数で受け取らず、全て DB の product.price から計算する。
+    """
+    items = _normalize_cart(cart or {})
+    if not items:
+        raise OrderError("カートが空です")
+
+    # 同時に注文が来ても在庫以上に売らないよう、商品の行をロックしてから確かめる（SELECT ... FOR UPDATE）。
+    # 同じ商品を注文する処理は commit まで順番待ちになる。ID の順にロックしてデッドロックを防ぐ。
+    # SQLite では無視されるだけなので、開発とテストでも同じコードで動く
+    products = {
+        product.id: product
+        for product in db.session.scalars(
+            select(Product)
+            .where(Product.id.in_(items.keys()))
+            .order_by(Product.id)
+            .with_for_update()
+        )
+    }
+
+    # ---- 確認（ここでは DB に何も足さない） ----
+    try:
+        _check_items(items, products)
+    except OrderError:
+        db.session.rollback()  # ロックをすぐ外す
+        raise
 
     # ---- 作成（確認が全部通ったときだけ。commit は1回） ----
     order = Order(user_id=user.id, status=OrderStatus.PENDING, total_amount=0)
@@ -110,5 +125,27 @@ def create_order(user: User, cart: dict) -> Order:
         )
     order.total_amount = sum(item.subtotal for item in order.items)
     db.session.add(order)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return order
+
+
+def cancel(order: Order) -> bool:
+    """支払い待ちの注文だけを取り消す。取り消せたら True、既に支払い済みか取り消し済みなら False
+
+    「読んで pending なら書く」と2段階にすると、支払いの確定と同時に来たときに食い違うので、
+    WHERE status = 'pending' の条件付きの UPDATE 1文で行う（仕様書 4 の「条件付き更新」）。
+    取り消すと、reserved_quantity が pending しか数えないので、押さえていた在庫が戻る
+    """
+    result = db.session.execute(
+        update(Order)
+        .where(Order.id == order.id, Order.status == OrderStatus.PENDING)
+        .values(status=OrderStatus.CANCELLED)
+        .execution_options(synchronize_session=False)
+    )
+    db.session.commit()
+    db.session.refresh(order)
+    return result.rowcount == 1

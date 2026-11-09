@@ -229,8 +229,9 @@ def test_画面から注文すると合計はDBの価格で計算される(
     )
 
     order = db.session.scalar(db.select(Order))
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith(f"/orders/{order.id}")
+    # 決済ページ（フェイクの Stripe）へ 303 で移る
+    assert response.status_code == 303
+    assert response.headers["Location"].startswith("https://checkout.stripe.test/")
     assert order.user_id == customer.id
     assert order.total_amount == 300 * 2 + 1300
     assert {i.unit_price for i in order.items} == {300, 1300}

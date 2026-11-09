@@ -18,6 +18,10 @@ def create_app(config=None):
         UPLOAD_FOLDER=os.path.join(app.root_path, "static", "uploads"),
         # 写真は 5MB まで（フォームで確かめる）。それより大きく余裕を取り、超えたら 413
         MAX_CONTENT_LENGTH=6 * 1024 * 1024,
+        STRIPE_SECRET_KEY=os.environ.get("STRIPE_SECRET_KEY", ""),
+        STRIPE_WEBHOOK_SECRET=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        # テストではフェイクを渡す（create_app({"PAYMENT_SERVICE": FakePayment()})）
+        PAYMENT_SERVICE=None,
     )
     if config is not None:
         app.config.update(config)
@@ -33,6 +37,11 @@ def create_app(config=None):
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
     login_manager.login_message = "ログインしてください"
+
+    # 外部サービス。views は current_app.extensions["payment"] 経由で呼ぶ
+    from marche.services import payment
+
+    app.extensions["payment"] = app.config["PAYMENT_SERVICE"] or payment
 
     from marche.views import auth, cart, orders, producer, shop
 
