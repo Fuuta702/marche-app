@@ -172,3 +172,16 @@ def test_詳細の数量はいま買える数と10の小さい方まで(client, 
 def test_売り切れなら詳細にカートのボタンが出ない(client, producer, make_product):
     product = make_product(producer, stock=0)
     assert "カートに入れる" not in client.get(f"/products/{product.id}").text
+
+
+def test_追加で数量を減らすことはできない(client, apple):
+    set_cart(client, {str(apple.id): 5})
+    client.post(f"/cart/add/{apple.id}", data={"quantity": "-3"})
+    assert cart_of(client) == {str(apple.id): 5}
+
+
+def test_カートの0以下の数量は表示しない(client, apple):
+    set_cart(client, {str(apple.id): -2})
+    text = client.get("/cart/").text
+    assert "カートは空です" in text
+    assert "-2,400円" not in text

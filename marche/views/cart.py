@@ -17,7 +17,12 @@ def get_cart() -> dict[int, int]:
             product_id = int(key)
         except TypeError, ValueError:
             continue
-        if isinstance(quantity, int) and not isinstance(quantity, bool):
+        # 0 以下の数量も捨てる（負の小計を出さない）
+        if (
+            isinstance(quantity, int)
+            and not isinstance(quantity, bool)
+            and quantity >= 1
+        ):
             cart[product_id] = quantity
     return cart
 
@@ -69,7 +74,8 @@ def add(product_id: int):
     product = get_published_product_or_404(product_id)
     form = CartQuantityForm()
     back = url_for("shop.show", product_id=product.id)
-    if not form.validate_on_submit():
+    # 「追加」で数量を減らせないよう、送られた数そのものも 1 以上に限る
+    if not form.validate_on_submit() or form.quantity.data < 1:
         flash("数量を正しく選んでください")
         return redirect(back)
     cart = get_cart()

@@ -62,24 +62,8 @@ def _normalize_cart(cart: dict) -> dict[int, int]:
     return items
 
 
-def create_order(user: User, cart: dict) -> Order:
-    """カートから支払い待ちの注文を作る。
-
-    先に全ての商品を確かめ、1つでも駄目なら OrderError（DB には何も足さない）。
-    金額は引数で受け取らず、全て DB の product.price から計算する。
-    """
-    items = _normalize_cart(cart or {})
-    if not items:
-        raise OrderError("カートが空です")
-
-    products = {
-        product.id: product
-        for product in db.session.scalars(
-            select(Product).where(Product.id.in_(items.keys()))
-        )
-    }
-
-    # ---- 確認（ここでは DB に何も足さない） ----
+def _check_items(items: dict[int, int], products: dict[int, Product]) -> None:
+    """全ての商品を確かめる。1つでも駄目なら OrderError"""
     for product_id, quantity in items.items():
         product = products.get(product_id)
         # 存在しない商品と非公開の商品は、同じメッセージにする（非公開の商品が「ある」ことを教えない）
@@ -94,6 +78,37 @@ def create_order(user: User, cart: dict) -> Order:
             raise OrderError(
                 f"「{product.name}」は在庫が足りません（いま買える数: {stock}）"
             )
+
+
+def create_order(user: User, cart: dict) -> Order:
+    """カートから支払い待ちの注文を作る。
+
+    先に全ての商品を確かめ、1つでも駄目なら OrderError（DB には何も足さない）。
+    金額は引数で受け取らず、全て DB の product.price から計算する。
+    """
+    items = _normalize_cart(cart or {})
+    if not items:
+        raise OrderError("カートが空です")
+
+    # 同時に注文が来ても在庫以上に売らないよう、商品の行をロックしてから確かめる（SELECT ... FOR UPDATE）。
+    # 同じ商品を注文する処理は commit まで順番待ちになる。ID の順にロックしてデッドロックを防ぐ。
+    # SQLite では無視されるだけなので、開発とテストでも同じコードで動く
+    products = {
+        product.id: product
+        for product in db.session.scalars(
+            select(Product)
+            .where(Product.id.in_(items.keys()))
+            .order_by(Product.id)
+            .with_for_update()
+        )
+    }
+
+    # ---- 確認（ここでは DB に何も足さない） ----
+    try:
+        _check_items(items, products)
+    except OrderError:
+        db.session.rollback()  # ロックをすぐ外す
+        raise
 
     # ---- 作成（確認が全部通ったときだけ。commit は1回） ----
     order = Order(user_id=user.id, status=OrderStatus.PENDING, total_amount=0)
@@ -110,5 +125,9 @@ def create_order(user: User, cart: dict) -> Order:
         )
     order.total_amount = sum(item.subtotal for item in order.items)
     db.session.add(order)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return order
